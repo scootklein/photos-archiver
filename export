@@ -1,0 +1,115 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# Get current username
+USERNAME=$(whoami)
+
+# Function to calculate last day of a given month
+get_last_day_of_month() {
+    local year=$1
+    local month=$2
+
+    # Calculate first day of next month, then subtract one day
+    if [ "$month" -eq 12 ]; then
+        # If December, next month is January of next year
+        next_year=$((year + 1))
+        next_month=1
+    else
+        next_year=$year
+        next_month=$((month + 1))
+    fi
+
+    # macOS date format: calculate last day by going to first of next month minus 1 day
+    date -v1d -v"${next_year}y" -v"${next_month}m" -v-1d +%Y-%m-%d
+}
+
+# Function to export a single month
+export_month() {
+    local year_month=$1
+
+    # Parse YYYY-MM format
+    local year="${year_month%-*}"
+    local month="${year_month#*-}"
+
+    # Remove leading zeros for calculations
+    month=$((10#$month))
+
+    # Format month with leading zero
+    local month_padded=$(printf "%02d" $month)
+
+    # Create date strings for the first and last day of the month
+    local from_date="${year}-${month_padded}-01"
+    local to_date=$(get_last_day_of_month "$year" "$month")
+
+    # Create export directory name
+    local export_dir="$HOME/Downloads/${USERNAME}-iphoto-${year}-${month_padded}"
+    local zip_filename="${year}-${month_padded}.zip"
+
+    echo "========================================"
+    echo "Exporting photos from: $from_date to $to_date"
+    echo "Export directory: $export_dir"
+    echo "========================================"
+
+    # Create export directory if it doesn't exist
+    mkdir -p "$export_dir"
+
+    # Export photos for the month
+    osxphotos export "$export_dir" \
+        --export-by-date \
+        --download-missing \
+        --retry 3 \
+        --touch-file \
+        --from-date "$from_date" \
+        --to-date "$to_date"
+
+    echo "Export complete. Creating zip archive..."
+
+    # Create zip file (cd to Downloads to avoid including full path in zip)
+    cd "$HOME/Downloads"
+    zip -r "$zip_filename" "${USERNAME}-iphoto-${year}-${month_padded}"
+
+    echo "Zip archive created: $HOME/Downloads/$zip_filename"
+
+    # Upload to S3
+    echo "Uploading to S3..."
+    aws s3 cp "$HOME/Downloads/$zip_filename" "s3://io.klein.backup/${USERNAME}-iphoto/"
+
+    echo "Upload complete!"
+    echo "Cleaning up local files..."
+
+    # Clean up
+    rm -rf "$export_dir"
+    rm "$HOME/Downloads/$zip_filename"
+
+    echo "Done! Exported and uploaded photos for ${year}-${month_padded}"
+}
+
+# Main script logic
+if [ $# -eq 0 ]; then
+    # No arguments provided - use previous calendar month
+    current_year=$(date +%Y)
+    current_month=$(date +%m)
+
+    if [ "$current_month" -eq 1 ]; then
+        # If January, go back to December of previous year
+        prev_year=$((current_year - 1))
+        prev_month=12
+    else
+        # Otherwise just go back one month
+        prev_year=$current_year
+        prev_month=$((current_month - 1))
+    fi
+
+    prev_month_padded=$(printf "%02d" $prev_month)
+    export_month "${prev_year}-${prev_month_padded}"
+else
+    # Process each month/year pair provided
+    for year_month in "$@"; do
+        export_month "$year_month"
+    done
+fi
+
+echo "========================================"
+echo "All exports complete!"
+echo "========================================"
