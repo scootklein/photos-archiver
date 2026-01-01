@@ -73,7 +73,7 @@ export_month() {
 
     # Upload to S3
     echo "Uploading to S3..."
-    aws s3 cp "$HOME/Downloads/$zip_filename" "s3://io.klein.backup/${USERNAME}-iphoto/"
+    aws s3 cp "$HOME/Downloads/$zip_filename" "s3://io.klein.backup/${USERNAME}-iphoto/" --storage-class DEEP_ARCHIVE
 
     echo "Upload complete!"
     echo "Cleaning up local files..."
