@@ -2,8 +2,34 @@
 
 set -euo pipefail
 
+# Minimum osxphotos version required. Older versions can hit
+# "no such table: Z_nnASSETS" against newer Photos library schemas.
+MIN_OSXPHOTOS_VERSION="0.76.1"
+
 # Get current username
 USERNAME=$(whoami)
+
+# Verify osxphotos meets the minimum required version
+check_osxphotos_version() {
+    local version
+    version=$(osxphotos --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+
+    if [ -z "$version" ]; then
+        echo "ERROR: Could not determine osxphotos version. Is it installed?" >&2
+        exit 1
+    fi
+
+    local oldest
+    oldest=$(printf '%s\n%s\n' "$MIN_OSXPHOTOS_VERSION" "$version" | sort -V | head -1)
+
+    if [ "$oldest" != "$MIN_OSXPHOTOS_VERSION" ]; then
+        echo "ERROR: osxphotos $version is older than the required $MIN_OSXPHOTOS_VERSION." >&2
+        echo "Run: uv tool upgrade osxphotos" >&2
+        exit 1
+    fi
+}
+
+check_osxphotos_version
 
 # Function to calculate last day of a given month
 get_last_day_of_month() {
